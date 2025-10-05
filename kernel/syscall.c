@@ -147,3 +147,39 @@ syscall(void)
     p->trapframe->a0 = -1;
   }
 }
+
+
+/*
+ * Returns -1 on error, 1 for a rejected syscall, 0 for an allowed syscall.
+ *
+ * Checks wheter the syscall is allowed in terms of previously called interpose
+ * commands that set the process sandbox mask and sandbox path.
+ *
+ * If a syscall is called, which is masked (ie the bit corresponding to
+ * the syscall number is set in the mask) then reject it (regardless of
+ * what the sandbox path of the process is), EXCEPT if its a OPEN or EXEC
+ * syscall. In that latter case the sandbox path of the process is checked
+ * against the syscall path argument (of open/exec) and the syscall gets
+ * rejected if the path does not match the sandbox path, otherwise its allowed.
+ *
+ */
+int
+check_syscall_allowed(struct proc* p, int num)
+{
+  char path[MAXPATH];
+
+  /* Check if mask is even set */
+  if ((p->sandbox_mask & (1 << num)) == 0) return 0;
+
+  /* Mask is set, check if its a syscall other than open/exec */
+  if (num != SYS_open && num != SYS_exec) return -1;
+
+  /* Try to read path */
+  if (argstr (0, path, MAXPATH) < 0) return -1;
+
+  /* Check if path matches */
+  if (strncmp (path, p->sandbox_path, MAXPATH) != 0) return -1;
+
+  /* Path matches, so allow. */
+  return 0;
+}
